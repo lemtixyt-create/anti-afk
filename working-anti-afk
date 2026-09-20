@@ -1,0 +1,443 @@
+-- AntiAFK X | LocalScript inside StarterPlayerScripts
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local VIM = game:GetService("VirtualInputManager")
+local VirtualUser = game:GetService("VirtualUser")
+
+local lp = Players.LocalPlayer
+local mouse = lp:GetMouse()
+
+local function makeTween(obj, props, t)
+    TweenService:Create(obj, TweenInfo.new(t or 0.2, Enum.EasingStyle.Quad), props):Play()
+end
+
+-- ═══════════════════════════════════════
+-- STATE
+-- ═══════════════════════════════════════
+
+local antiAFKOn = false
+local lastAction = tick()
+local actionConn
+local countdownConn
+
+-- Which keys are selected
+local keyConfig = {
+    W   = true,
+    D   = true,
+    LMB = true,
+}
+
+-- Interval in seconds (60 = 1 min)
+-- Randomized ±15s so it never fires on a fixed pattern
+local BASE_INTERVAL = 60
+
+local function getNextInterval()
+    return BASE_INTERVAL + math.random(-15, 15)
+end
+
+local nextFire = getNextInterval()
+local timeLeft = nextFire
+
+-- ═══════════════════════════════════════
+-- ACTION LOGIC
+-- ═══════════════════════════════════════
+
+-- Organic press: hold for random short duration then release
+local function pressKey(keyName)
+    local holdTime = 0.08 + math.random() * 0.06 -- 80-140ms hold
+    VIM:SendKeyEvent(true,  keyName, false, game)
+    task.wait(holdTime)
+    VIM:SendKeyEvent(false, keyName, false, game)
+end
+
+local function pressLMB()
+    local holdTime = 0.06 + math.random() * 0.05
+    VIM:SendMouseButtonEvent(0, 0, 0, true,  game, 0)
+    task.wait(holdTime)
+    VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+end
+
+-- Also ping VirtualUser to reset Roblox's own AFK timer
+local function resetRobloxAFK()
+    VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+    task.wait(0.05)
+    VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+end
+
+local function doAntiAFK()
+    -- Randomized order so it never looks the same twice
+    local actions = {}
+    if keyConfig.W   then table.insert(actions, function() pressKey("W") end) end
+    if keyConfig.D   then table.insert(actions, function() pressKey("D") end) end
+    if keyConfig.LMB then table.insert(actions, function() pressLMB() end) end
+
+    -- Shuffle
+    for i = #actions, 2, -1 do
+        local j = math.random(1, i)
+        actions[i], actions[j] = actions[j], actions[i]
+    end
+
+    -- Fire each with a tiny organic gap
+    for _, action in ipairs(actions) do
+        action()
+        task.wait(0.05 + math.random() * 0.1)
+    end
+
+    -- Reset Roblox's native AFK detection
+    resetRobloxAFK()
+end
+
+-- ═══════════════════════════════════════
+-- GUI
+-- ═══════════════════════════════════════
+
+local screenGui = Instance.new("ScreenGui", lp.PlayerGui)
+screenGui.Name = "AntiAFKX"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+-- Main frame
+local frame = Instance.new("Frame", screenGui)
+frame.Size = UDim2.new(0, 210, 0, 290)
+frame.Position = UDim2.new(1, -230, 1, -310)
+frame.BackgroundColor3 = Color3.fromHex("#0f0f1a")
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = true
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 12)
+local frameStroke = Instance.new("UIStroke", frame)
+frameStroke.Color = Color3.fromHex("#7c3aed")
+frameStroke.Thickness = 1.5
+
+-- Glow accent bar at top
+local accentBar = Instance.new("Frame", frame)
+accentBar.Size = UDim2.new(1, 0, 0, 3)
+accentBar.Position = UDim2.new(0, 0, 0, 0)
+accentBar.BackgroundColor3 = Color3.fromHex("#7c3aed")
+accentBar.BorderSizePixel = 0
+Instance.new("UICorner", accentBar).CornerRadius = UDim.new(0, 12)
+
+-- Title bar
+local titleBar = Instance.new("Frame", frame)
+titleBar.Size = UDim2.new(1, 0, 0, 38)
+titleBar.Position = UDim2.new(0, 0, 0, 3)
+titleBar.BackgroundTransparency = 1
+titleBar.BorderSizePixel = 0
+
+local titleIcon = Instance.new("TextLabel", titleBar)
+titleIcon.Text = "◈"
+titleIcon.Size = UDim2.new(0, 24, 1, 0)
+titleIcon.Position = UDim2.new(0, 12, 0, 0)
+titleIcon.BackgroundTransparency = 1
+titleIcon.TextColor3 = Color3.fromHex("#7c3aed")
+titleIcon.TextSize = 16
+titleIcon.Font = Enum.Font.GothamBold
+
+local titleLbl = Instance.new("TextLabel", titleBar)
+titleLbl.Text = "Anti AFK"
+titleLbl.Size = UDim2.new(1, -44, 1, 0)
+titleLbl.Position = UDim2.new(0, 34, 0, 0)
+titleLbl.BackgroundTransparency = 1
+titleLbl.TextColor3 = Color3.fromHex("#e2e8f0")
+titleLbl.TextSize = 13
+titleLbl.Font = Enum.Font.GothamBold
+titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Close button
+local closeBtn = Instance.new("TextButton", titleBar)
+closeBtn.Size = UDim2.new(0, 18, 0, 18)
+closeBtn.Position = UDim2.new(1, -28, 0.5, -9)
+closeBtn.BackgroundColor3 = Color3.fromHex("#ef4444")
+closeBtn.BorderSizePixel = 0
+closeBtn.Text = "✕"
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.TextSize = 9
+closeBtn.Font = Enum.Font.GothamBold
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(1, 0)
+closeBtn.MouseButton1Click:Connect(function()
+    antiAFKOn = false
+    if actionConn then actionConn:Disconnect() end
+    if countdownConn then countdownConn:Disconnect() end
+    makeTween(frame, {BackgroundTransparency = 1, Size = UDim2.new(0, 0, 0, 0)}, 0.3)
+    task.wait(0.35)
+    screenGui:Destroy()
+end)
+
+-- Divider
+local divider = Instance.new("Frame", frame)
+divider.Size = UDim2.new(1, -24, 0, 1)
+divider.Position = UDim2.new(0, 12, 0, 41)
+divider.BackgroundColor3 = Color3.fromHex("#1e1e3a")
+divider.BorderSizePixel = 0
+
+-- Body
+local body = Instance.new("Frame", frame)
+body.Size = UDim2.new(1, 0, 1, -44)
+body.Position = UDim2.new(0, 0, 0, 44)
+body.BackgroundTransparency = 1
+local bodyLayout = Instance.new("UIListLayout", body)
+bodyLayout.Padding = UDim.new(0, 6)
+bodyLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+local bodyPad = Instance.new("UIPadding", body)
+bodyPad.PaddingTop = UDim.new(0, 10)
+bodyPad.PaddingLeft = UDim.new(0, 12)
+bodyPad.PaddingRight = UDim.new(0, 12)
+
+-- Status card
+local statusCard = Instance.new("Frame", body)
+statusCard.Size = UDim2.new(1, 0, 0, 48)
+statusCard.BackgroundColor3 = Color3.fromHex("#13132b")
+statusCard.BorderSizePixel = 0
+Instance.new("UICorner", statusCard).CornerRadius = UDim.new(0, 8)
+local scStroke = Instance.new("UIStroke", statusCard)
+scStroke.Color = Color3.fromHex("#1e1e3a")
+scStroke.Thickness = 1
+
+local statusDot = Instance.new("Frame", statusCard)
+statusDot.Size = UDim2.new(0, 8, 0, 8)
+statusDot.Position = UDim2.new(0, 12, 0.5, -4)
+statusDot.BackgroundColor3 = Color3.fromHex("#6b7280")
+statusDot.BorderSizePixel = 0
+Instance.new("UICorner", statusDot).CornerRadius = UDim.new(1, 0)
+
+local statusLbl = Instance.new("TextLabel", statusCard)
+statusLbl.Text = "Inactive"
+statusLbl.Size = UDim2.new(1, -30, 0, 18)
+statusLbl.Position = UDim2.new(0, 28, 0, 5)
+statusLbl.BackgroundTransparency = 1
+statusLbl.TextColor3 = Color3.fromHex("#94a3b8")
+statusLbl.TextSize = 11
+statusLbl.Font = Enum.Font.GothamSemibold
+statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+local countdownLbl = Instance.new("TextLabel", statusCard)
+countdownLbl.Text = "Next: --"
+countdownLbl.Size = UDim2.new(1, -30, 0, 16)
+countdownLbl.Position = UDim2.new(0, 28, 0, 24)
+countdownLbl.BackgroundTransparency = 1
+countdownLbl.TextColor3 = Color3.fromHex("#4a4a6a")
+countdownLbl.TextSize = 10
+countdownLbl.Font = Enum.Font.Gotham
+countdownLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Section label
+local secLbl = Instance.new("TextLabel", body)
+secLbl.Text = "SELECT KEYS"
+secLbl.Size = UDim2.new(1, 0, 0, 14)
+secLbl.BackgroundTransparency = 1
+secLbl.TextColor3 = Color3.fromHex("#3a3a6a")
+secLbl.TextSize = 9
+secLbl.Font = Enum.Font.GothamBold
+secLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Checkbox builder
+local checkboxRefs = {}
+
+local function makeCheckbox(parent, labelText, key, defaultOn)
+    local row = Instance.new("Frame", parent)
+    row.Size = UDim2.new(1, 0, 0, 30)
+    row.BackgroundColor3 = Color3.fromHex("#13132b")
+    row.BorderSizePixel = 0
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 7)
+    local rowStroke = Instance.new("UIStroke", row)
+    rowStroke.Color = Color3.fromHex("#1e1e3a")
+    rowStroke.Thickness = 1
+
+    local rowPad = Instance.new("UIPadding", row)
+    rowPad.PaddingLeft = UDim.new(0, 10)
+    rowPad.PaddingRight = UDim.new(0, 10)
+
+    local keyTag = Instance.new("TextLabel", row)
+    keyTag.Text = labelText
+    keyTag.Size = UDim2.new(0, 90, 1, 0)
+    keyTag.BackgroundTransparency = 1
+    keyTag.TextColor3 = Color3.fromHex("#c4b5fd")
+    keyTag.TextSize = 11
+    keyTag.Font = Enum.Font.GothamSemibold
+    keyTag.TextXAlignment = Enum.TextXAlignment.Left
+
+    local descLbl = Instance.new("TextLabel", row)
+    descLbl.Text = key == "LMB" and "Left Click" or ("Key " .. key)
+    descLbl.Size = UDim2.new(1, -130, 1, 0)
+    descLbl.Position = UDim2.new(0, 90, 0, 0)
+    descLbl.BackgroundTransparency = 1
+    descLbl.TextColor3 = Color3.fromHex("#4a4a6a")
+    descLbl.TextSize = 10
+    descLbl.Font = Enum.Font.Gotham
+    descLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+    -- Checkbox box
+    local box = Instance.new("TextButton", row)
+    box.Size = UDim2.new(0, 18, 0, 18)
+    box.Position = UDim2.new(1, -18, 0.5, -9)
+    box.BackgroundColor3 = defaultOn and Color3.fromHex("#7c3aed") or Color3.fromHex("#1e1e3a")
+    box.BorderSizePixel = 0
+    box.Text = defaultOn and "✓" or ""
+    box.TextColor3 = Color3.fromRGB(255, 255, 255)
+    box.TextSize = 10
+    box.Font = Enum.Font.GothamBold
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 4)
+    local boxStroke = Instance.new("UIStroke", box)
+    boxStroke.Color = defaultOn and Color3.fromHex("#7c3aed") or Color3.fromHex("#3a3a6a")
+    boxStroke.Thickness = 1.5
+
+    local checked = defaultOn
+
+    box.MouseButton1Click:Connect(function()
+        checked = not checked
+        keyConfig[key] = checked
+        makeTween(box, {
+            BackgroundColor3 = checked and Color3.fromHex("#7c3aed") or Color3.fromHex("#1e1e3a")
+        }, 0.15)
+        boxStroke.Color = checked and Color3.fromHex("#7c3aed") or Color3.fromHex("#3a3a6a")
+        box.Text = checked and "✓" or ""
+    end)
+
+    checkboxRefs[key] = {box = box, checked = function() return checked end}
+    return row
+end
+
+makeCheckbox(body, "W Key",  "W",   true)
+makeCheckbox(body, "D Key",  "D",   true)
+makeCheckbox(body, "LMB",    "LMB", true)
+
+-- Toggle button
+local togRow = Instance.new("Frame", body)
+togRow.Size = UDim2.new(1, 0, 0, 38)
+togRow.BackgroundColor3 = Color3.fromHex("#13132b")
+togRow.BorderSizePixel = 0
+Instance.new("UICorner", togRow).CornerRadius = UDim.new(0, 8)
+local togStroke = Instance.new("UIStroke", togRow)
+togStroke.Color = Color3.fromHex("#1e1e3a")
+togStroke.Thickness = 1
+
+local togPad = Instance.new("UIPadding", togRow)
+togPad.PaddingLeft = UDim.new(0, 10)
+togPad.PaddingRight = UDim.new(0, 10)
+
+local togLbl = Instance.new("TextLabel", togRow)
+togLbl.Text = "Anti AFK"
+togLbl.Size = UDim2.new(0.6, 0, 1, 0)
+togLbl.BackgroundTransparency = 1
+togLbl.TextColor3 = Color3.fromHex("#e2e8f0")
+togLbl.TextSize = 12
+togLbl.Font = Enum.Font.GothamSemibold
+togLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+local togBtn = Instance.new("TextButton", togRow)
+togBtn.Size = UDim2.new(0, 42, 0, 22)
+togBtn.Position = UDim2.new(1, -42, 0.5, -11)
+togBtn.BackgroundColor3 = Color3.fromHex("#1e1e3a")
+togBtn.BorderSizePixel = 0
+togBtn.Text = ""
+Instance.new("UICorner", togBtn).CornerRadius = UDim.new(0, 11)
+local togBtnStroke = Instance.new("UIStroke", togBtn)
+togBtnStroke.Color = Color3.fromHex("#3a3a6a")
+togBtnStroke.Thickness = 1
+
+local togThumb = Instance.new("Frame", togBtn)
+togThumb.Size = UDim2.new(0, 16, 0, 16)
+togThumb.Position = UDim2.new(0, 3, 0.5, -8)
+togThumb.BackgroundColor3 = Color3.fromHex("#6b7280")
+togThumb.BorderSizePixel = 0
+Instance.new("UICorner", togThumb).CornerRadius = UDim.new(1, 0)
+
+-- Pulse dot animation
+local function pulseDot(active)
+    task.spawn(function()
+        while antiAFKOn do
+            makeTween(statusDot, {BackgroundTransparency = 0.4}, 0.5)
+            task.wait(0.5)
+            makeTween(statusDot, {BackgroundTransparency = 0}, 0.5)
+            task.wait(0.5)
+        end
+        statusDot.BackgroundTransparency = 0
+    end)
+end
+
+-- Flash effect when action fires
+local function flashCard()
+    makeTween(statusCard, {BackgroundColor3 = Color3.fromHex("#1a0a3a")}, 0.1)
+    task.wait(0.15)
+    makeTween(statusCard, {BackgroundColor3 = Color3.fromHex("#13132b")}, 0.3)
+end
+
+-- Toggle logic
+local function setToggle(state)
+    antiAFKOn = state
+    makeTween(togBtn, {
+        BackgroundColor3 = state and Color3.fromHex("#7c3aed") or Color3.fromHex("#1e1e3a")
+    }, 0.2)
+    togBtnStroke.Color = state and Color3.fromHex("#7c3aed") or Color3.fromHex("#3a3a6a")
+    makeTween(togThumb, {
+        Position = state and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8),
+        BackgroundColor3 = state and Color3.fromHex("#ffffff") or Color3.fromHex("#6b7280")
+    }, 0.2)
+    makeTween(frameStroke, {Color = state and Color3.fromHex("#7c3aed") or Color3.fromHex("#3a3a6a")}, 0.3)
+
+    if state then
+        statusLbl.Text = "Active"
+        statusLbl.TextColor3 = Color3.fromHex("#a78bfa")
+        statusDot.BackgroundColor3 = Color3.fromHex("#7c3aed")
+        nextFire = getNextInterval()
+        timeLeft = nextFire
+        pulseDot(true)
+
+        -- Countdown ticker
+        countdownConn = RunService.Heartbeat:Connect(function(dt)
+            if not antiAFKOn then return end
+            timeLeft = timeLeft - dt
+            local secs = math.max(math.ceil(timeLeft), 0)
+            local mins = math.floor(secs / 60)
+            local s = secs % 60
+            countdownLbl.Text = string.format("Next action: %d:%02d", mins, s)
+            countdownLbl.TextColor3 = secs < 15
+                and Color3.fromHex("#f87171")
+                or Color3.fromHex("#4a4a6a")
+
+            if timeLeft <= 0 then
+                -- Fire the anti-AFK action
+                timeLeft = getNextInterval()
+                task.spawn(function()
+                    flashCard()
+                    doAntiAFK()
+                    statusLbl.Text = "Fired ✓"
+                    task.wait(1.5)
+                    if antiAFKOn then statusLbl.Text = "Active" end
+                end)
+            end
+        end)
+
+    else
+        if countdownConn then countdownConn:Disconnect(); countdownConn = nil end
+        statusLbl.Text = "Inactive"
+        statusLbl.TextColor3 = Color3.fromHex("#94a3b8")
+        statusDot.BackgroundColor3 = Color3.fromHex("#6b7280")
+        countdownLbl.Text = "Next: --"
+        countdownLbl.TextColor3 = Color3.fromHex("#4a4a6a")
+    end
+end
+
+togBtn.MouseButton1Click:Connect(function()
+    setToggle(not antiAFKOn)
+end)
+
+togRow.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        setToggle(not antiAFKOn)
+    end
+end)
+
+-- Footer
+local footer = Instance.new("TextLabel", frame)
+footer.Text = "undetected  ·  lemtix"
+footer.Size = UDim2.new(1, 0, 0, 18)
+footer.Position = UDim2.new(0, 0, 1, -20)
+footer.BackgroundTransparency = 1
+footer.TextColor3 = Color3.fromHex("#1e1e3a")
+footer.TextSize = 9
+footer.Font = Enum.Font.Gotham
+footer.TextXAlignment = Enum.TextXAlignment.Center
