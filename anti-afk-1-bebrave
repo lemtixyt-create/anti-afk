@@ -1,0 +1,192 @@
+-- Anti-AFK for Steal an Egg (or any Roblox game)
+-- Requires: an executor (Delta, Xeno, Solara, etc.)
+
+local UIS = game:GetService("UserInputService")
+local VirtualUser = game:GetService("VirtualUser")
+
+-- Settings
+local pressW = true
+local pressD = true
+local pressMouse = true
+local isRunning = false
+local interval = 60 -- seconds
+
+-- Key press helper
+local function pressKey(keyCode)
+    UIS:SendKeyEvent(true, keyCode, false, game)
+    task.wait(0.1)
+    UIS:SendKeyEvent(false, keyCode, false, game)
+end
+
+-- Mouse click helper
+local function clickMouse()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
+    -- Alternative for LMB at center:
+    -- VirtualUser:ClickButton1(Vector2.new(workspace.CurrentCamera.ViewportSize.X/2, workspace.CurrentCamera.ViewportSize.Y/2))
+end
+
+-- Anti-AFK loop
+local function afkLoop()
+    while isRunning do
+        if pressW then pressKey(Enum.KeyCode.W) end
+        if pressD then pressKey(Enum.KeyCode.D) end
+        if pressMouse then clickMouse() end
+        task.wait(interval)
+    end
+end
+
+-- ===== GUI =====
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AntiAfkGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Parent = ScreenGui
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+MainFrame.BackgroundTransparency = 0.1
+MainFrame.BorderSizePixel = 0
+MainFrame.Position = UDim2.new(0.5, -140, 0.1, 0)
+MainFrame.Size = UDim2.new(0, 280, 0, 220)
+
+local Corner = Instance.new("UICorner")
+Corner.CornerRadius = UDim.new(0, 12)
+Corner.Parent = MainFrame
+
+local Stroke = Instance.new("UIStroke")
+Stroke.Color = Color3.fromRGB(0, 255, 180)
+Stroke.Thickness = 1.5
+Stroke.Parent = MainFrame
+
+-- Title
+local Title = Instance.new("TextLabel")
+Title.Parent = MainFrame
+Title.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
+Title.BackgroundTransparency = 0
+Title.Text = "⚡ Anti-AFK"
+Title.TextColor3 = Color3.fromRGB(0, 255, 180)
+Title.TextSize = 18
+Title.Font = Enum.Font.GothamBold
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.BorderSizePixel = 0
+local TitleCorner = Instance.new("UICorner")
+TitleCorner.CornerRadius = UDim.new(0, 12)
+TitleCorner.Parent = Title
+
+-- Status
+local Status = Instance.new("TextLabel")
+Status.Parent = MainFrame
+Status.BackgroundTransparency = 1
+Status.Text = "Status: OFF"
+Status.TextColor3 = Color3.fromRGB(255, 80, 80)
+Status.TextSize = 13
+Status.Font = Enum.Font.Gotham
+Status.Size = UDim2.new(1, 0, 0, 20)
+Status.Position = UDim2.new(0, 0, 0.18, 0)
+
+-- Toggle Button
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Parent = MainFrame
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 120)
+ToggleBtn.Text = "ENABLE"
+ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleBtn.TextSize = 15
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.Size = UDim2.new(0.8, 0, 0, 36)
+ToggleBtn.Position = UDim2.new(0.1, 0, 0.28, 0)
+ToggleBtn.BorderSizePixel = 0
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(0, 8)
+ToggleCorner.Parent = ToggleBtn
+
+-- Checkboxes
+local function makeCheckbox(name, label, yPos, defaultChecked)
+    local btn = Instance.new("TextButton")
+    btn.Name = name
+    btn.Parent = MainFrame
+    btn.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+    btn.Text = (defaultChecked and "☑ " or "☐ ") .. label
+    btn.TextColor3 = Color3.fromRGB(220, 220, 220)
+    btn.TextSize = 13
+    btn.Font = Enum.Font.Gotham
+    btn.Size = UDim2.new(0.4, 0, 0, 28)
+    btn.Position = UDim2.new(yPos == 1 and 0.08 or 0.52, 0, 0.45, 0)
+    btn.BorderSizePixel = 0
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 6)
+    c.Parent = btn
+    return btn
+end
+
+local chkW = makeCheckbox("ChkW", "Press W", 1, true)
+local chkD = makeCheckbox("ChkD", "Press D", 2, true)
+local chkMouse = makeCheckbox("ChkMouse", "LMB Click", 3, true)
+
+-- Row 2 for mouse checkbox (centered)
+chkMouse.Position = UDim2.new(0.08, 0, 0.57, 0)
+chkMouse.Size = UDim2.new(0.8, 0, 0, 28)
+
+-- Checkbox logic
+local function connectCheck(btn, varName)
+    btn.MouseButton1Click:Connect(function()
+        if varName == "W" then pressW = not pressW
+        elseif varName == "D" then pressD = not pressD
+        elseif varName == "Mouse" then pressMouse = not pressMouse
+        end
+        local labels = {W = "Press W", D = "Press D", Mouse = "LMB Click"}
+        local val = (varName == "W" and pressW) or (varName == "D" and pressD) or (varName == "Mouse" and pressMouse)
+        btn.Text = (val and "☑ " or "☐ ") .. labels[varName]
+        btn.BackgroundColor3 = val and Color3.fromRGB(0, 120, 80) or Color3.fromRGB(35, 35, 50)
+    end)
+end
+
+connectCheck(chkW, "W")
+connectCheck(chkD, "D")
+connectCheck(chkMouse, "Mouse")
+
+-- Toggle logic
+ToggleBtn.MouseButton1Click:Connect(function()
+    isRunning = not isRunning
+    if isRunning then
+        ToggleBtn.Text = "DISABLE"
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        Status.Text = "Status: ON"
+        Status.TextColor3 = Color3.fromRGB(0, 255, 100)
+        task.spawn(afkLoop)
+    else
+        ToggleBtn.Text = "ENABLE"
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 120)
+        Status.Text = "Status: OFF"
+        Status.TextColor3 = Color3.fromRGB(255, 80, 80)
+    end
+end)
+
+-- Drag
+local dragging, dragInput, dragStart, startPos
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+    end
+end)
+MainFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        dragInput = input
+    end
+end)
+UIS.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+UIS.InputEnded:Connect(function(input)
+    if input == dragInput then dragging = false end
+end)
+
+print("[Anti-AFK] GUI loaded. Press ENABLE to start.")   
